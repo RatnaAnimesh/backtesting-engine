@@ -55,45 +55,13 @@ def get_historical_data(ticker: str, start_date: str = None, end_date: str = Non
     Fetches from yfinance if data is missing or not fully available locally.
     """
     local_path = _get_local_path(ticker)
-    full_data = pd.DataFrame()
+    
+    # Create data directory if it doesn't exist
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
 
-    if os.path.exists(local_path):
-        full_data = pd.read_parquet(local_path)
-        full_data.index = pd.to_datetime(full_data.index)
-        full_data = full_data.sort_index()
-
-        # Check if local data covers the requested range
-        if not full_data.empty:
-            local_min_date = full_data.index.min().strftime('%Y-%m-%d')
-            local_max_date = full_data.index.max().strftime('%Y-%m-%d')
-
-            requested_start = pd.to_datetime(start_date) if start_date else None
-            requested_end = pd.to_datetime(end_date) if end_date else None
-
-            # Determine if we need to fetch older data
-            fetch_older = False
-            if requested_start and requested_start < full_data.index.min():
-                fetch_older = True
-                _fetch_and_save_data(ticker, start_date=requested_start.strftime('%Y-%m-%d'), end_date=local_min_date)
-                full_data = pd.read_parquet(local_path) # Reload after update
-                full_data.index = pd.to_datetime(full_data.index)
-                full_data = full_data.sort_index()
-
-            # Determine if we need to fetch newer data
-            fetch_newer = False
-            if requested_end and requested_end > full_data.index.max():
-                fetch_newer = True
-                _fetch_and_save_data(ticker, start_date=local_max_date, end_date=requested_end.strftime('%Y-%m-%d'))
-                full_data = pd.read_parquet(local_path) # Reload after update
-                full_data.index = pd.to_datetime(full_data.index)
-                full_data = full_data.sort_index()
-
-            if not fetch_older and not fetch_newer:
-                print(f"Using cached data for {ticker}.")
-        else: # Local file exists but is empty
-            full_data = _fetch_and_save_data(ticker, start_date, end_date)
-    else:
-        full_data = _fetch_and_save_data(ticker, start_date, end_date)
+    # Always fetch the full requested date range for simplicity and robustness
+    full_data = _fetch_and_save_data(ticker, start_date, end_date)
 
     # Filter the data to the requested range before returning
     if not full_data.empty:
@@ -113,6 +81,7 @@ def get_multiple_historical_data(tickers: list[str], start_date: str = None, end
     all_data = {}
     for ticker in tickers:
         df = get_historical_data(ticker, start_date, end_date)
+        print(f"Loaded data for {ticker}: {len(df)} rows") # Add this line
         if not df.empty:
             # We are primarily interested in 'close' now
             all_data[ticker] = df['close']
@@ -120,10 +89,12 @@ def get_multiple_historical_data(tickers: list[str], start_date: str = None, end
             print(f"Warning: No data available for {ticker} in the specified range.")
 
     if not all_data:
+        print("Warning: No data was loaded for any ticker") # Add this line
         return pd.DataFrame()
 
     # Combine into a single DataFrame, aligning by date
     combined_df = pd.DataFrame(all_data)
+    print(f"Combined data shape: {combined_df.shape}") # Add this line
     combined_df.index.name = 'date'
     return combined_df.sort_index()
 

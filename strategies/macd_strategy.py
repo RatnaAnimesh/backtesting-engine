@@ -30,23 +30,30 @@ class MACDStrategy(BaseStrategy):
         Generates trading signals based on the MACD state (above/below signal line).
         """
         if current_data.empty or len(current_data) < self.slow_period:
+            print(f"Not enough data. Current data length: {len(current_data)}") # Add this line
             return pd.Series(dtype=float)  # Not enough data
 
         target_weights = pd.Series(0.0, index=current_data.columns)
 
         for ticker in current_data.columns:
             if current_data[ticker].isnull().all() or len(current_data[ticker].dropna()) < self.slow_period:
+                print(f"Skipping {ticker}: insufficient data") # Add this line
                 continue  # Skip if not enough data for this specific ticker
 
             # Calculate MACD
             macd_df = calculate_macd(current_data[ticker], self.slow_period, self.fast_period, self.signal_period)
 
             if macd_df.empty:
+                print(f"Empty MACD DataFrame for {ticker}") # Add this line
                 continue
 
             # Get the most recent MACD and Signal value
             curr_macd = macd_df['MACD'].iloc[-1]
             curr_signal = macd_df['Signal'].iloc[-1]
+
+            if pd.isna(curr_macd) or pd.isna(curr_signal): # Add this check
+                print(f"Invalid MACD values for {ticker}: MACD={curr_macd}, Signal={curr_signal}")
+                continue
 
             # Buy Signal: MACD is above Signal line (bullish)
             if curr_macd > curr_signal:

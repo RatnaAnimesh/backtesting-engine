@@ -43,7 +43,13 @@ class Portfolio:
         Executes trades to rebalance the portfolio to target weights.
         """
         if current_prices.empty or target_weights.empty:
+            print(f"No trades executed: prices or weights empty") # Add this line
             return
+
+        # Debug prints
+        print(f"\nExecuting trades for {current_date}")
+        print(f"Target weights: {target_weights}")
+        print(f"Current prices: {current_prices}")
 
         # Ensure all potential tickers are in the positions Series
         for ticker in target_weights.index:
@@ -55,6 +61,9 @@ class Portfolio:
         # Total capital available for allocation (including cash)
         total_capital = self.cash + current_holdings_value
 
+        print(f"Current holdings value: {current_holdings_value}")
+        print(f"Total capital: {total_capital}")
+
         # Calculate target value for each asset
         target_values = target_weights * total_capital
 
@@ -63,6 +72,10 @@ class Portfolio:
 
         # Calculate value difference (what needs to be bought/sold)
         value_diff = target_values - current_values
+
+        print(f"Target values: {target_values}")
+        print(f"Current values: {current_values}")
+        print(f"Value differences: {value_diff}")
 
         # Sort trades to sell first (to free up cash) then buy
         trade_order = value_diff.sort_values(ascending=True) # Negative values (sells) first
@@ -156,8 +169,16 @@ class Backtester:
         # Determine the data loading start date based on the lookback period
         self.data_start_date = self.backtest_start_date - pd.Timedelta(days=lookback_days)
 
+        print(f"\nInitializing backtester:")
+        print(f"Start date: {start_date}")
+        print(f"End date: {end_date}")
+        print(f"Lookback start date: {self.data_start_date}")
+
         # Load all data (including the lookback period)
         self.full_data = self._load_data(self.data_start_date.strftime('%Y-%m-%d'), self.backtest_end_date.strftime('%Y-%m-%d'))
+
+        print(f"Full data shape: {self.full_data.shape}")
+        print(f"Date range: {self.full_data.index.min()} to {self.full_data.index.max()}")
 
         if self.full_data.empty:
             raise ValueError("No data loaded for backtesting. Check tickers and date range.")
@@ -175,6 +196,9 @@ class Backtester:
 
         # Call strategy pre-run setup with all available data
         self.strategy.pre_run_setup(self.full_data)
+
+        # Index to track the next rebalancing date
+        self.next_rebalance_idx = 0
 
     def _load_data(self, start_date: str, end_date: str) -> pd.DataFrame:
         """
@@ -197,36 +221,42 @@ class Backtester:
 
             if current_prices.empty:
                 print(f"No price data for {current_date}. Skipping.")
-                # On skip days, the portfolio value should be carried over
                 if portfolio_values:
                     portfolio_values.append(portfolio_values[-1])
                 else:
                     portfolio_values.append(self.initial_cash)
                 continue
 
-            # Rebalance on specific dates
-            if current_date in self.rebalance_dates:
-                print(f"Rebalancing on {current_date}...")
-                # Pass all historical data up to the current date for signal generation
-                historical_data_for_strategy = self.full_data.loc[:current_date]
-                target_weights = self.strategy.generate_signals(historical_data_for_strategy)
+            # --- Improved Rebalancing Logic ---
+            # Check if there are still rebalancing dates to process
+            if self.next_rebalance_idx < len(self.rebalance_dates):
+                next_rebalance_target_date = self.rebalance_dates[self.next_rebalance_idx]
 
-                if not target_weights.empty:
-                    self.portfolio.execute_trades(target_weights, current_prices, current_date)
-                else:
-                    print(f"No signals generated for {current_date}.")
+                # If the current trading day is on or after the target rebalancing date
+                if current_date >= next_rebalance_target_date:
+                    print(f"Rebalancing on {current_date} (target was {next_rebalance_target_date})...")
+                    
+                    # Pass all historical data up to the current date for signal generation
+                    historical_data_for_strategy = self.full_data.loc[:current_date]
+                    target_weights = self.strategy.generate_signals(historical_data_for_strategy)
+
+                    if not target_weights.empty:
+                        self.portfolio.execute_trades(target_weights, current_prices, current_date)
+                    else:
+                        print(f"No signals generated for {current_date}.")
+                    
+                    # Move to the next rebalancing date
+                    self.next_rebalance_idx += 1
 
             # Update portfolio value at the end of each day
             self.portfolio.update_portfolio(current_prices)
             portfolio_values.append(self.portfolio.total_value)
 
         self.equity_curve = pd.Series(portfolio_values, index=self.backtest_data.index)
-        # Normalize to initial cash, handle case where first value is zero
         if self.equity_curve.iloc[0] != 0:
             self.equity_curve = self.equity_curve / self.equity_curve.iloc[0] * self.initial_cash
         else:
             self.equity_curve = pd.Series(self.initial_cash, index=self.backtest_data.index)
-
 
         results = {
             'equity_curve': self.equity_curve,
