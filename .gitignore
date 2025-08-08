@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+virtualenv/
+venv/
+.venv/
+env/
+
+# Data
+data/
+*.csv
+*.parquet
+*.hdf5
+
+# IDEs
+.idea/
+.vscode/
+
+# Operating System
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
